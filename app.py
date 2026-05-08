@@ -5,10 +5,9 @@ from langchain_community.document_loaders import TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 
-from langchain_google_genai import (
-    ChatGoogleGenerativeAI,
-    GoogleGenerativeAIEmbeddings
-)
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+from langchain_community.embeddings import HuggingFaceEmbeddings
 
 from langchain_core.prompts import ChatPromptTemplate
 
@@ -64,33 +63,32 @@ def load_rag():
         st.error("ไม่พบ dataset")
         return None
 
-    loader = TextLoader(
-        "รายละเอียดคอร์สออนไลน์.txt",
-        encoding="utf-8"
-    )
+loader = TextLoader(
+    "รายละเอียดคอร์สออนไลน์.txt",
+    encoding="utf-8"
+)
 
-    documents = loader.load()
+documents = loader.load()
 
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500,
-        chunk_overlap=50
-    )
+splitter = RecursiveCharacterTextSplitter(
+    chunk_size=300,
+    chunk_overlap=30
+)
 
-    chunks = splitter.split_documents(documents)
+chunks = splitter.split_documents(documents)
 
-    embeddings = GoogleGenerativeAIEmbeddings(
-        model="models/embedding-001",
-        google_api_key=GOOGLE_API_KEY
-    )
+embeddings = HuggingFaceEmbeddings(
+    model_name="sentence-transformers/all-MiniLM-L6-v2"
+)
 
-    vectorstore = FAISS.from_documents(
-        chunks,
-        embeddings
-    )
+vectorstore = FAISS.from_documents(
+    chunks,
+    embeddings
+)
 
-    retriever = vectorstore.as_retriever(
-        search_kwargs={"k": 3}
-    )
+retriever = vectorstore.as_retriever(
+    search_kwargs={"k": 3}
+)
 
     llm = ChatGoogleGenerativeAI(
         model="gemini-1.5-flash",
