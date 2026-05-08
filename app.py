@@ -115,7 +115,7 @@ def load_rag():
     )
 
     llm = ChatGoogleGenerativeAI(
-        model="gemini-pro",
+        model="models/gemini-1.5-flash",
         google_api_key=GOOGLE_API_KEY,
         temperature=0.2
     )
