@@ -1,7 +1,9 @@
-streamlit
-langchain
-langchain-community
-langchain-google-genai
-faiss-cpu
 torch
 torchvision
+streamlit
+langchain
+langchain-core
+langchain-community
+langchain-text-splitters
+langchain-google-genai
+faiss-cpu
