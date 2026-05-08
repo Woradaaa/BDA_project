@@ -3,11 +3,11 @@ import os
 
 from langchain_community.document_loaders import TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+
 from langchain_community.vectorstores import FAISS
+from langchain_community.embeddings import HuggingFaceEmbeddings
 
 from langchain_google_genai import ChatGoogleGenerativeAI
-
-from langchain_community.embeddings import HuggingFaceEmbeddings
 
 from langchain_core.prompts import ChatPromptTemplate
 
@@ -19,94 +19,112 @@ from langchain.chains.retrieval import (
     create_retrieval_chain
 )
 
-# ---------------- PAGE CONFIG ----------------
+# --------------------------------------------------
+# PAGE CONFIG
+# --------------------------------------------------
 
 st.set_page_config(
     page_title="MFU Academy AI",
-    page_icon="🎓"
+    page_icon="🎓",
+    layout="wide"
 )
 
 st.title("🎓 MFU Academy AI Assistant")
 
-st.write(
-    "ระบบ AI Chatbot สำหรับตอบคำถามเกี่ยวกับคอร์สออนไลน์ "
-    "โดยใช้เทคนิค RAG Pipeline"
-)
+st.markdown("""
+ระบบ AI Chatbot สำหรับตอบคำถามเกี่ยวกับคอร์สออนไลน์  
+โดยใช้เทคนิค RAG Pipeline + Gemini AI
+""")
 
-# ---------------- GROUP INFO ----------------
+# --------------------------------------------------
+# GROUP INFO
+# --------------------------------------------------
 
-st.markdown("## Group No: BDA_Project2_10")
-
-st.sidebar.header("👥 สมาชิกกลุ่ม")
+st.sidebar.header("📌 Group Information")
 
 st.sidebar.markdown("""
+### Group No:
+BDA_Project2_10
+
+### Members:
 - 6631501148 Kanphong Nasuriwong
 - 6631501158 Nitiwat Chatturong
 - 6631501168 Worada Suyawa
 - 6631501169 Supison Kingjuntrasin
 """)
 
-# ---------------- API KEY ----------------
+# --------------------------------------------------
+# API KEY
+# --------------------------------------------------
 
 try:
     GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
 except:
-    st.error("กรุณาตั้งค่า GOOGLE_API_KEY ใน Streamlit Secrets")
+    st.error("Please add GOOGLE_API_KEY in Streamlit Secrets")
     st.stop()
 
-# ---------------- LOAD RAG ----------------
+# --------------------------------------------------
+# LOAD DATASET
+# --------------------------------------------------
+
+DATA_FILE = "รายละเอียดคอร์สออนไลน์.txt"
+
+# --------------------------------------------------
+# CACHE VECTOR DATABASE
+# --------------------------------------------------
 
 @st.cache_resource
-def load_rag():
+def load_vectorstore():
 
-    if not os.path.exists("รายละเอียดคอร์สออนไลน์.txt"):
-        st.error("ไม่พบ dataset")
-        return None
-
-    # Load dataset
     loader = TextLoader(
-        "รายละเอียดคอร์สออนไลน์.txt",
+        DATA_FILE,
         encoding="utf-8"
     )
 
     documents = loader.load()
 
-    # Split text
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=300,
-        chunk_overlap=30
+        chunk_size=250,
+        chunk_overlap=20
     )
 
     chunks = splitter.split_documents(documents)
 
-    # Embedding model
     embeddings = HuggingFaceEmbeddings(
         model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
 
-    # Vector database
     vectorstore = FAISS.from_documents(
         chunks,
         embeddings
     )
 
+    return vectorstore
+
+# --------------------------------------------------
+# LOAD RAG CHAIN
+# --------------------------------------------------
+
+@st.cache_resource
+def load_rag():
+
+    vectorstore = load_vectorstore()
+
     retriever = vectorstore.as_retriever(
-        search_kwargs={"k": 3}
+        search_kwargs={"k": 2}
     )
 
-    # Gemini LLM
     llm = ChatGoogleGenerativeAI(
-        model="gemini-1.5-flash",
+        model="gemini-pro",
         google_api_key=GOOGLE_API_KEY,
-        temperature=0.3
+        temperature=0.2
     )
 
-    # Prompt
     system_prompt = """
     คุณคือ AI Assistant ของ MFU Academy
-
-    ตอบโดยอ้างอิงจากข้อมูลที่ได้รับเท่านั้น
-
+    
+    ตอบโดยใช้ข้อมูลจาก context เท่านั้น
+    
     หากไม่มีข้อมูลให้ตอบว่า:
     "ขออภัย ไม่พบข้อมูลในระบบ"
 
@@ -133,42 +151,88 @@ def load_rag():
 
 rag_chain = load_rag()
 
-# ---------------- CHAT ----------------
+# --------------------------------------------------
+# SESSION MEMORY
+# --------------------------------------------------
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+# --------------------------------------------------
+# TABS
+# --------------------------------------------------
 
-user_input = st.chat_input(
-    "สอบถามเกี่ยวกับคอร์สออนไลน์..."
-)
+tab1, tab2 = st.tabs([
+    "💬 Q&A Chatbot",
+    "📚 Course Information"
+])
 
-if user_input:
+# ==================================================
+# TAB 1 : CHATBOT
+# ==================================================
 
-    st.session_state.messages.append({
-        "role": "user",
-        "content": user_input
-    })
+with tab1:
 
-    with st.chat_message("user"):
-        st.markdown(user_input)
+    st.subheader("💬 Ask About Courses")
 
-    with st.chat_message("assistant"):
+    for message in st.session_state.messages:
 
-        with st.spinner("กำลังค้นหาข้อมูล..."):
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
 
-            response = rag_chain.invoke({
-                "input": user_input
-            })
+    user_input = st.chat_input(
+        "Ask about online courses..."
+    )
 
-            answer = response["answer"]
+    if user_input:
 
-            st.markdown(answer)
+        st.session_state.messages.append({
+            "role": "user",
+            "content": user_input
+        })
 
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": answer
-            })
+        with st.chat_message("user"):
+            st.markdown(user_input)
+
+        with st.chat_message("assistant"):
+
+            with st.spinner("Searching..."):
+
+                try:
+
+                    response = rag_chain.invoke({
+                        "input": user_input
+                    })
+
+                    answer = response["answer"]
+
+                except Exception as e:
+
+                    answer = f"⚠️ Error: {str(e)}"
+
+                st.markdown(answer)
+
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": answer
+                })
+
+# ==================================================
+# TAB 2 : COURSE INFORMATION
+# ==================================================
+
+with tab2:
+
+    st.subheader("📚 All Course Information")
+
+    if os.path.exists(DATA_FILE):
+
+        with open(DATA_FILE, "r", encoding="utf-8") as file:
+
+            course_text = file.read()
+
+        st.text(course_text)
+
+    else:
+
+        st.error("Dataset file not found")
