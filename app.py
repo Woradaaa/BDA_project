@@ -63,44 +63,50 @@ def load_rag():
         st.error("ไม่พบ dataset")
         return None
 
-loader = TextLoader(
-    "รายละเอียดคอร์สออนไลน์.txt",
-    encoding="utf-8"
-)
+    # Load dataset
+    loader = TextLoader(
+        "รายละเอียดคอร์สออนไลน์.txt",
+        encoding="utf-8"
+    )
 
-documents = loader.load()
+    documents = loader.load()
 
-splitter = RecursiveCharacterTextSplitter(
-    chunk_size=300,
-    chunk_overlap=30
-)
+    # Split text
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=300,
+        chunk_overlap=30
+    )
 
-chunks = splitter.split_documents(documents)
+    chunks = splitter.split_documents(documents)
 
-embeddings = HuggingFaceEmbeddings(
-    model_name="sentence-transformers/all-MiniLM-L6-v2"
-)
+    # Embedding model
+    embeddings = HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2"
+    )
 
-vectorstore = FAISS.from_documents(
-    chunks,
-    embeddings
-)
+    # Vector database
+    vectorstore = FAISS.from_documents(
+        chunks,
+        embeddings
+    )
 
-retriever = vectorstore.as_retriever(
-    search_kwargs={"k": 3}
-)
+    retriever = vectorstore.as_retriever(
+        search_kwargs={"k": 3}
+    )
 
+    # Gemini LLM
     llm = ChatGoogleGenerativeAI(
         model="gemini-1.5-flash",
         google_api_key=GOOGLE_API_KEY,
         temperature=0.3
     )
 
+    # Prompt
     system_prompt = """
     คุณคือ AI Assistant ของ MFU Academy
-    
+
     ตอบโดยอ้างอิงจากข้อมูลที่ได้รับเท่านั้น
-    
+
     หากไม่มีข้อมูลให้ตอบว่า:
     "ขออภัย ไม่พบข้อมูลในระบบ"
 
