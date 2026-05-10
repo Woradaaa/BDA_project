@@ -65,9 +65,9 @@ except:
 # LOAD DATA
 # =====================================================
 
-COURSE_FILE = "/content/sample_data/course_detail.txt"
+COURSE_FILE = "course_detail.txt"
 
-GUIDE_FILE = "/content/sample_data/MFU Academy Q&A.txt"
+GUIDE_FILE = "MFU Academy Q&A.txt"
 
 @st.cache_resource
 def build_rag():
