@@ -1,27 +1,25 @@
 import streamlit as st
 import os
 
-from langchain_community.document_loaders import TextLoader
+from langchain_core.documents import Document
+
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+from langchain_huggingface import HuggingFaceEmbeddings
+
 from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import HuggingFaceEmbeddings
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts import PromptTemplate
 
-from langchain.chains.combine_documents import (
-    create_stuff_documents_chain
-)
+from langchain_core.runnables import RunnablePassthrough
 
-from langchain.chains.retrieval import (
-    create_retrieval_chain
-)
+from langchain_core.output_parsers import StrOutputParser
 
-# --------------------------------------------------
+# =====================================================
 # PAGE CONFIG
-# --------------------------------------------------
+# =====================================================
 
 st.set_page_config(
     page_title="MFU Academy AI",
@@ -32,19 +30,19 @@ st.set_page_config(
 st.title("🎓 MFU Academy AI Assistant")
 
 st.markdown("""
-ระบบ AI Chatbot สำหรับตอบคำถามเกี่ยวกับคอร์สออนไลน์  
-โดยใช้เทคนิค RAG Pipeline + Gemini AI
+AI Chatbot สำหรับตอบคำถามเกี่ยวกับคอร์สเรียนออนไลน์  
+โดยใช้เทคนิค RAG Pipeline
 """)
 
-# --------------------------------------------------
-# GROUP INFO
-# --------------------------------------------------
+# =====================================================
+# SIDEBAR
+# =====================================================
 
 st.sidebar.header("📌 Group Information")
 
 st.sidebar.markdown("""
 ### Group No:
-BDA_Project2_10
+BDA_Project2_Group10
 
 ### Members:
 - 6631501148 Kanphong Nasuriwong
@@ -53,66 +51,78 @@ BDA_Project2_10
 - 6631501169 Supison Kingjuntrasin
 """)
 
-# --------------------------------------------------
+# =====================================================
 # API KEY
-# --------------------------------------------------
+# =====================================================
 
 try:
     GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
 except:
-    st.error("Please add GOOGLE_API_KEY in Streamlit Secrets")
+    st.error("❌ กรุณาเพิ่ม GOOGLE_API_KEY ใน Streamlit Secrets")
     st.stop()
 
-# --------------------------------------------------
-# LOAD DATASET
-# --------------------------------------------------
+# =====================================================
+# LOAD DATA
+# =====================================================
 
-DATA_FILE = "รายละเอียดคอร์สออนไลน์.txt"
+COURSE_FILE = "/content/sample_data/course_detail.txt"
 
-# --------------------------------------------------
-# CACHE VECTOR DATABASE
-# --------------------------------------------------
+GUIDE_FILE = "/content/sample_data/MFU Academy Q&A.txt"
 
 @st.cache_resource
-def load_vectorstore():
+def build_rag():
 
-    loader = TextLoader(
-        DATA_FILE,
-        encoding="utf-8"
-    )
+    # -----------------------------
+    # Load course dataset
+    # -----------------------------
 
-    documents = loader.load()
+    with open(COURSE_FILE, "r", encoding="utf-8") as f:
+        course_text = f.read()
+
+    docs = [Document(page_content=course_text)]
+
+    # -----------------------------
+    # Load guideline
+    # -----------------------------
+
+    with open(GUIDE_FILE, "r", encoding="utf-8") as f:
+        guide_text = f.read()
+
+    # -----------------------------
+    # Split text
+    # -----------------------------
 
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=250,
-        chunk_overlap=20
+        chunk_size=400,
+        chunk_overlap=40
     )
 
-    chunks = splitter.split_documents(documents)
+    splits = splitter.split_documents(docs)
+
+    # -----------------------------
+    # Embeddings
+    # -----------------------------
 
     embeddings = HuggingFaceEmbeddings(
         model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
 
+    # -----------------------------
+    # FAISS
+    # -----------------------------
+
     vectorstore = FAISS.from_documents(
-        chunks,
+        splits,
         embeddings
     )
-
-    return vectorstore
-
-# --------------------------------------------------
-# LOAD RAG CHAIN
-# --------------------------------------------------
-
-@st.cache_resource
-def load_rag():
-
-    vectorstore = load_vectorstore()
 
     retriever = vectorstore.as_retriever(
         search_kwargs={"k": 2}
     )
+
+    # -----------------------------
+    # Gemini
+    # -----------------------------
 
     llm = ChatGoogleGenerativeAI(
         model="models/gemini-1.5-flash",
@@ -120,68 +130,91 @@ def load_rag():
         temperature=0.2
     )
 
-    system_prompt = """
-    คุณคือ AI Assistant ของ MFU Academy
-    
-    ตอบโดยใช้ข้อมูลจาก context เท่านั้น
-    
-    หากไม่มีข้อมูลให้ตอบว่า:
-    "ขออภัย ไม่พบข้อมูลในระบบ"
+    # -----------------------------
+    # Prompt
+    # -----------------------------
 
-    Context:
-    {context}
-    """
+    template = f"""
+คุณคือ AI Assistant ของ MFU Academy
 
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", system_prompt),
-        ("human", "{input}")
-    ])
+จงตอบด้วยสไตล์สุภาพ เป็นกันเอง
+ตอบสั้น กระชับ เข้าใจง่าย
 
-    qa_chain = create_stuff_documents_chain(
-        llm,
-        prompt
+ตัวอย่างแนวทางการตอบ:
+{guide_text}
+
+ให้ใช้ข้อมูลจาก Context เท่านั้น
+
+หากไม่มีข้อมูลให้ตอบว่า:
+"ขออภัยครับ ไม่พบข้อมูลในระบบ"
+
+Context:
+{{context}}
+
+Question:
+{{input}}
+
+Answer:
+"""
+
+    prompt = PromptTemplate.from_template(template)
+
+    # -----------------------------
+    # Format docs
+    # -----------------------------
+
+    def format_docs(docs):
+        return "\n\n".join(doc.page_content for doc in docs)
+
+    # -----------------------------
+    # RAG Pipeline
+    # -----------------------------
+
+    rag_chain = (
+        {
+            "context": retriever | format_docs,
+            "input": RunnablePassthrough()
+        }
+        | prompt
+        | llm
+        | StrOutputParser()
     )
 
-    rag_chain = create_retrieval_chain(
-        retriever,
-        qa_chain
-    )
+    return rag_chain, course_text
 
-    return rag_chain
+rag_chain, course_text = build_rag()
 
-rag_chain = load_rag()
-
-# --------------------------------------------------
-# SESSION MEMORY
-# --------------------------------------------------
+# =====================================================
+# SESSION
+# =====================================================
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# --------------------------------------------------
+# =====================================================
 # TABS
-# --------------------------------------------------
+# =====================================================
 
 tab1, tab2 = st.tabs([
     "💬 Q&A Chatbot",
     "📚 Course Information"
 ])
 
-# ==================================================
-# TAB 1 : CHATBOT
-# ==================================================
+# =====================================================
+# TAB 1
+# =====================================================
 
 with tab1:
 
     st.subheader("💬 Ask About Courses")
 
-    for message in st.session_state.messages:
+    for msg in st.session_state.messages:
 
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
 
     user_input = st.chat_input(
-        "Ask about online courses..."
+        "Ask something about the courses..."
     )
 
     if user_input:
@@ -196,43 +229,29 @@ with tab1:
 
         with st.chat_message("assistant"):
 
-            with st.spinner("Searching..."):
+            with st.spinner("🔍 Searching..."):
 
                 try:
 
-                    response = rag_chain.invoke({
-                        "input": user_input
-                    })
-
-                    answer = response["answer"]
+                    response = rag_chain.invoke(user_input)
 
                 except Exception as e:
 
-                    answer = f"⚠️ Error: {str(e)}"
+                    response = f"⚠️ Error: {str(e)}"
 
-                st.markdown(answer)
+                st.markdown(response)
 
                 st.session_state.messages.append({
                     "role": "assistant",
-                    "content": answer
+                    "content": response
                 })
 
-# ==================================================
-# TAB 2 : COURSE INFORMATION
-# ==================================================
+# =====================================================
+# TAB 2
+# =====================================================
 
 with tab2:
 
     st.subheader("📚 All Course Information")
 
-    if os.path.exists(DATA_FILE):
-
-        with open(DATA_FILE, "r", encoding="utf-8") as file:
-
-            course_text = file.read()
-
-        st.text(course_text)
-
-    else:
-
-        st.error("Dataset file not found")
+    st.text(course_text[:20000])
