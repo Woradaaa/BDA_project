@@ -12,5 +12,6 @@ sentence-transformers
 faiss-cpu
 
 torch
+torchvision
 transformers
 accelerate
